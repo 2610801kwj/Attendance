@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1학년 8반 이중 권한 출결 관리 시스템</title>
+    <style>
+        :root {
+            --primary: #2da44e;
+            --admin-color: #cf222e;
+            --bg-color: #f6f8fa;
+            --card-bg: #ffffff;
+            --text-color: #1f2328;
+            --border-color: #d0d7de;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 3px rgba(31,35,40,0.12);
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        h1 { font-size: 1.4rem; margin: 0; }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        input[type="date"], input[type="text"], input[type="password"] {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 7px 14px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        button:hover { opacity: 0.9; }
+        button.btn-secondary { background-color: #f6f8fa; color: #24292f; border: 1px solid var(--border-color); }
+
+        .role-badge {
+            font-size: 0.85rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            display: inline-block;
+        }
+        .role-none { background: #f3f4f6; color: #57606a; }
+        .role-teacher { background: #ddf4ff; color: #0969da; }
+        .role-admin { background: #ffebe9; color: #cf222e; }
+
+        .config-panel {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            padding: 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #f6f8fa;
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-card .number { font-size: 1.3rem; font-weight: bold; margin-top: 4px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px 12px; text-align: center; border-bottom: 1px solid var(--border-color); }
+        th { background-color: #f6f8fa; font-weight: 600; }
+
+        tr.excluded-row {
+            background-color: #fff8f8;
+            color: #8c959f;
+        }
+
+        .badge-excluded {
+            background: #ffebe9;
+            color: #cf222e;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin-left: 4px;
+        }
+
+        select {
+            padding: 5px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            font-size: 0.9rem;
+        }
+
+        .status-O { color: #1a7f37; font-weight: bold; }
+        .status-X { color: #cf222e; font-weight: bold; }
+        .status-L { color: #9a6700; font-weight: bold; }
+        .status-E { color: #0969da; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div>
+            <h1>📦 1학년 8반 출결 관리</h1>
+            <div style="margin-top: 6px;">
+                <span id="roleBadge" class="role-badge role-none">🔒 잠금 상태 (읽기 전용)</span>
+            </div>
+        </div>
+        <div class="controls">
+            <input type="date" id="attendanceDate">
+            <button class="btn-secondary" onclick="authenticate()">🔑 보안키 입력</button>
+            <button class="btn-secondary" onclick="toggleConfig()">⚙️ GitHub 설정</button>
+            <button onclick="saveToGitHub()">💾 GitHub 커밋 저장</button>
+        </div>
+    </header>
+
+    <!-- GitHub 연동 창 -->
+    <div id="configPanel" class="config-panel">
+        <strong>⚙️ GitHub Repository 연동 설정</strong>
+        <div class="config-grid">
+            <input type="text" id="ghOwner" placeholder="GitHub Username">
+            <input type="text" id="ghRepo" placeholder="Repository 이름 (예: 1-8-attendance)">
+            <input type="password" id="ghToken" placeholder="GitHub PAT Token">
+        </div>
+        <div style="margin-top: 10px; text-align: right;">
+            <button onclick="saveConfig()">연동 정보 저장</button>
+        </div>
+    </div>
+
+    <!-- 요약 통계 -->
+    <div class="stats-bar">
+        <div class="stat-card">전체 학생<div class="number" id="statTotal">23</div></div>
+        <div class="stat-card">유효 집계인원<div class="number" id="statActive">23</div></div>
+        <div class="stat-card">출석<div class="number status-O" id="statPresent">0</div></div>
+        <div class="stat-card">결석<div class="number status-X" id="statAbsent">0</div></div>
+        <div class="stat-card">지각/조퇴<div class="number status-L" id="statLateEarly">0</div></div>
+        <div class="stat-card" style="border-color: #f87171;">집계제외(-1점)<div class="number status-X" id="statExcluded">0</div></div>
+    </div>
+
+    <!-- 출결 명단 -->
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 8%;">번호</th>
+                <th style="width: 18%;">이름</th>
+                <th style="width: 22%;">출석 상태 (출결키 필요)</th>
+                <th style="width: 22%;">집계 제외/감점 (관리자키 필요)</th>
+                <th style="width: 30%;">비고 / 사유</th>
+            </tr>
+        </thead>
+        <tbody id="studentTableBody">
+            <!-- 명단 자동 생성 -->
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const students = [
+        "권우진", "김규민", "김도엽", "김민석", "김민준", 
+        "김성준", "김슬찬", "김승우", "김은율", "김재민", 
+        "김준영", "김휘서", "명로찬", "박요산", "윤준용", 
+        "정나후", "조문규", "차성민", "최예준", "최원정", 
+        "최윤후", "최임성", "최지원"
+    ];
+
+    // 보안키 설정
+    const TEACHER_PIN = "1234"; // 출결 체크용 키
+    const ADMIN_PIN = "9999";   // 집계 제외 및 점수 차감용 키
+
+    let currentRole = 'none'; // 'none', 'teacher', 'admin'
+    let currentAttendance = {};
+    let fullAttendanceData = {};
+    let currentFileSha = null;
+
+    const dateInput = document.getElementById('attendanceDate');
+
+    window.onload = function() {
+        loadConfig();
+        initDate();
+        fetchFromGitHub();
+    };
+
+    function initDate() {
+        let today = new Date();
+        while (today.getDay() === 0 || today.getDay() === 6) {
+            today.setDate(today.getDate() - 1);
+        }
+        dateInput.value = today.toISOString().split('T')[0];
+
+        dateInput.addEventListener('change', () => {
+            renderTableForCurrentDate();
+        });
+    }
+
+    // 보안키 인증 함수
+    function authenticate() {
+        if (currentRole !== 'none') {
+            currentRole = 'none';
+            updateRoleUI();
+            renderTableForCurrentDate();
+            alert('로그아웃 되었습니다. (읽기 전용 모드)');
+            return;
+        }
+
+        const inputPin = prompt("보안키(PIN)를 입력하세요:\n- 출결 체크키: 1234\n- 관리자/점수 차감키: 9999");
+        if (inputPin === TEACHER_PIN) {
+            currentRole = 'teacher';
+            alert('🔓 출결 체크 권한으로 인증되었습니다.');
+        } else if (inputPin === ADMIN_PIN) {
+            currentRole = 'admin';
+            alert('🔓 관리자 권한(집계 제외 및 점수 차감 가능)으로 인증되었습니다.');
+        } else if (inputPin !== null) {
+            alert('올바르지 않은 보안키입니다.');
+        }
+
+        updateRoleUI();
+        renderTableForCurrentDate();
+    }
+
+    function updateRoleUI() {
+        const badge = document.getElementById('roleBadge');
+        if (currentRole === 'teacher') {
+            badge.innerText = "🔑 출결 체크 권한 모드";
+            badge.className = "role-badge role-teacher";
+        } else if (currentRole === 'admin') {
+            badge.innerText = "⚡ 관리자 권한 모드 (점수 차감 가능)";
+            badge.className = "role-badge role-admin";
+        } else {
+            badge.innerText = "🔒 잠금 상태 (읽기 전용)";
+            badge.className = "role-badge role-none";
+        }
+    }
+
+    // 깃허브 설정 관련
+    function toggleConfig() {
+        const panel = document.getElementById('configPanel');
+        panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function saveConfig() {
+        localStorage.setItem('gh_owner', document.getElementById('ghOwner').value.trim());
+        localStorage.setItem('gh_repo', document.getElementById('ghRepo').value.trim());
+        localStorage.setItem('gh_token', document.getElementById('ghToken').value.trim());
+        document.getElementById('configPanel').style.display = 'none';
+        fetchFromGitHub();
+    }
+
+    function loadConfig() {
+        document.getElementById('ghOwner').value = localStorage.getItem('gh_owner') || '';
+        document.getElementById('ghRepo').value = localStorage.getItem('gh_repo') || '';
+        document.getElementById('ghToken').value = localStorage.getItem('gh_token') || '';
+    }
+
+    // GitHub API 로드
+    async function fetchFromGitHub() {
+        const owner = localStorage.getItem('gh_owner');
+        const repo = localStorage.getItem('gh_repo');
+        const token = localStorage.getItem('gh_token');
+        if (!owner || !repo || !token) return;
+
+        const url = `https://api.github.com/repos/${owner}/${repo}/contents/data/attendance.json`;
+        try {
+            const res = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                currentFileSha = data.sha;
+                fullAttendanceData = JSON.parse(base64ToUtf8(data.content));
+                renderTableForCurrentDate();
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    // GitHub API 커밋
+    async function saveToGitHub() {
+        const owner = localStorage.getItem('gh_owner');
+        const repo = localStorage.getItem('gh_repo');
+        const token = localStorage.getItem('gh_token');
+
+        if (!owner || !repo || !token) {
+            alert('⚙️ GitHub 설정에서 연동 정보를 먼저 입력해주세요.');
+            toggleConfig();
+            return;
+        }
+
+        const dateKey = dateInput.value;
+        fullAttendanceData[dateKey] = currentAttendance;
+
+        const url = `https://api.github.com/repos/${owner}/${repo}/contents/data/attendance.json`;
+        const bodyData = {
+            message: `Update attendance & score deductions for ${dateKey}`,
+            content: utf8ToBase64(JSON.stringify(fullAttendanceData, null, 2))
+        };
+        if (currentFileSha) bodyData.sha = currentFileSha;
+
+        try {
+            const res = await fetch(url, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyData)
+            });
+            if (res.ok) {
+                const resData = await res.json();
+                currentFileSha = resData.content.sha;
+                alert(`✅ GitHub 저장소에 기록이 완료되었습니다! (${dateKey})`);
+            } else {
+                alert('저장 실패: GitHub 권한 및 설정을 확인하세요.');
+            }
+        } catch (e) { alert('오류 발생: ' + e.message); }
+    }
+
+    // 화면 렌더링
+    function renderTableForCurrentDate() {
+        const dateKey = dateInput.value;
+        currentAttendance = fullAttendanceData[dateKey] || {};
+
+        const tbody = document.getElementById('studentTableBody');
+        tbody.innerHTML = '';
+
+        const canCheckAttendance = (currentRole === 'teacher' || currentRole === 'admin');
+        const canManageExclusion = (currentRole === 'admin');
+
+        students.forEach((name, idx) => {
+            const no = idx + 1;
+            const record = currentAttendance[no] || { status: 'O', excluded: false, note: '' };
+            currentAttendance[no] = record;
+
+            const tr = document.createElement('tr');
+            if (record.excluded) {
+                tr.className = 'excluded-row';
+            }
+
+            tr.innerHTML = `
+                <td>${no}</td>
+                <td>
+                    <strong>${name}</strong>
+                    ${record.excluded ? '<span class="badge-excluded">집계제외(-1점)</span>' : ''}
+                </td>
+                <td>
+                    <select ${!canCheckAttendance ? 'disabled' : ''} onchange="updateRecord(${no}, 'status', this.value)">
+                        <option value="O" ${record.status === 'O' ? 'selected' : ''}>출석 (O)</option>
+                        <option value="X" ${record.status === 'X' ? 'selected' : ''}>결석 (X)</option>
+                        <option value="지각" ${record.status === '지각' ? 'selected' : ''}>지각 (Δ)</option>
+                        <option value="조퇴" ${record.status === '조퇴' ? 'selected' : ''}>조퇴 (□)</option>
+                    </select>
+                </td>
+                <td>
+                    <label style="cursor: pointer; font-size: 0.85rem;">
+                        <input type="checkbox" ${record.excluded ? 'checked' : ''} 
+                            ${!canManageExclusion ? 'disabled' : ''} 
+                            onchange="updateRecord(${no}, 'excluded', this.checked)">
+                        집계 제외 (-1점)
+                    </label>
+                </td>
+                <td>
+                    <input type="text" value="${record.note || ''}" placeholder="사유 입력" style="width: 90%;"
+                        ${!canCheckAttendance ? 'disabled' : ''}
+                        onchange="updateRecord(${no}, 'note', this.value)">
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        updateStats();
+    }
+
+    function updateRecord(no, field, val) {
+        if (!currentAttendance[no]) {
+            currentAttendance[no] = { status: 'O', excluded: false, note: '' };
+        }
+        currentAttendance[no][field] = val;
+        renderTableForCurrentDate();
+    }
+
+    function updateStats() {
+        let total = students.length;
+        let excludedCount = 0;
+        let present = 0;
+        let absent = 0;
+        let lateEarly = 0;
+
+        students.forEach((_, idx) => {
+            const no = idx + 1;
+            const rec = currentAttendance[no] || { status: 'O', excluded: false };
+
+            if (rec.excluded) {
+                excludedCount++; // 기록은 남아있되 집계 개수에서 제외됨
+            } else {
+                if (rec.status === 'O') present++;
+                else if (rec.status === 'X') absent++;
+                else if (rec.status === '지각' || rec.status === '조퇴') lateEarly++;
+            }
+        });
+
+        document.getElementById('statTotal').innerText = total;
+        document.getElementById('statActive').innerText = total - excludedCount; // 실제 유효 집계 인원
+        document.getElementById('statPresent').innerText = present;
+        document.getElementById('statAbsent').innerText = absent;
+        document.getElementById('statLateEarly').innerText = lateEarly;
+        document.getElementById('statExcluded').innerText = excludedCount;
+    }
+
+    function utf8ToBase64(str) {
+        return btoa(String.fromCodePoint(...new TextEncoder().encode(str)));
+    }
+
+    function base64ToUtf8(base64) {
+        return new TextDecoder().decode(Uint8Array.from(atob(base64.replace(/\s/g, '')), m => m.codePointAt(0)));
+    }
+</script>
+</body>
+</html>
