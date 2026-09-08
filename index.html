@@ -119,13 +119,6 @@
             display: none;
         }
 
-        .config-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 10px;
-            margin-top: 10px;
-        }
-
         .stats-bar {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
@@ -200,7 +193,7 @@
         </div>
         <div class="controls">
             <button class="btn-secondary" onclick="authenticate()">🔑 인증하기</button>
-            <button class="btn-secondary" onclick="toggleConfig()">⚙️ GitHub 설정</button>
+            <button class="btn-secondary" onclick="toggleConfig()">⚙️ GitHub 토큰 설정</button>
             <button onclick="saveToGitHub()">💾 저장하기</button>
         </div>
     </header>
@@ -211,18 +204,15 @@
     </div>
 
     <div id="configPanel" class="config-panel">
-        <strong>⚙️ GitHub Repository 연동 설정</strong>
-        <div class="config-grid">
-            <input type="text" id="ghOwner" placeholder="GitHub Username">
-            <input type="text" id="ghRepo" placeholder="Repository 이름">
-            <input type="password" id="ghToken" placeholder="GitHub Token">
+        <strong>⚙️ GitHub 인증 토큰 연동</strong>
+        <p style="font-size: 0.85rem; color: #57606a; margin: 4px 0 10px 0;">현재 웹페이지의 저장소 정보가 자동으로 인식됩니다.</p>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="password" id="ghToken" placeholder="GitHub Token 입력" style="flex: 1;">
+            <button onclick="saveConfig()">토큰 저장</button>
         </div>
-        <div style="margin-top: 10px; text-align: right;">
-            <button onclick="saveConfig()">설정 저장</button>
-        </div>
+        <div id="repoDetectStatus" style="font-size: 0.8rem; margin-top: 8px; color: #0969da;"></div>
     </div>
 
-    <!-- 탭 1: 오늘 출결 작성 -->
     <div id="tabCheck" class="view-section active">
         <div style="margin-bottom: 12px;">
             <label><strong>날짜 선택: </strong></label>
@@ -253,7 +243,6 @@
         </table>
     </div>
 
-    <!-- 탭 2: 스프레드시트 기록 전체 조회 -->
     <div id="tabHistory" class="view-section">
         <h3>📊 전체 출결 스프레드시트</h3>
         <p style="font-size: 0.9rem; color: #57606a;">날짜별 학생 출결 현황 및 누적 지각 점수 종합표입니다.</p>
@@ -271,10 +260,10 @@
         "최윤후", "최임성", "최지원"
     ];
 
-    const KEY_CHECK = "5487328"; // 출결 작성 전용 (점수 차감 불가)
-    const KEY_ADMIN = "115962";  // 점수 차감 전용 (출결 작성 불가)
+    const KEY_CHECK = "5487328"; // 출결 작성 전용
+    const KEY_ADMIN = "115962";  // 점수 차감 전용
 
-    let currentRole = 'none'; // 'none', 'check', 'admin'
+    let currentRole = 'none';
     let currentAttendance = {};
     let fullAttendanceData = {};
     let currentFileSha = null;
@@ -286,6 +275,26 @@
         initDate();
         fetchFromGitHub();
     };
+
+    // 현재 접속 중인 index.html 페이지의 URL에서 저장소 Owner/Repo 자동 감지
+    function getAutoRepoInfo() {
+        const host = window.location.hostname;
+        const pathSegments = window.location.pathname.split('/').filter(Boolean);
+
+        let owner = "";
+        let repo = "";
+
+        if (host.includes('github.io')) {
+            owner = host.split('.')[0];
+            repo = pathSegments.length > 0 ? pathSegments[0] : `${owner}.github.io`;
+        } else {
+            // 로컬 테스트 환경 시 기본 fallback
+            owner = localStorage.getItem('gh_owner') || '';
+            repo = localStorage.getItem('gh_repo') || '';
+        }
+
+        return { owner, repo };
+    }
 
     function initDate() {
         const today = new Date().toISOString().split('T')[0];
@@ -356,26 +365,26 @@
     }
 
     function saveConfig() {
-        localStorage.setItem('gh_owner', document.getElementById('ghOwner').value.trim());
-        localStorage.setItem('gh_repo', document.getElementById('ghRepo').value.trim());
         localStorage.setItem('gh_token', document.getElementById('ghToken').value.trim());
         document.getElementById('configPanel').style.display = 'none';
         fetchFromGitHub();
     }
 
     function loadConfig() {
-        document.getElementById('ghOwner').value = localStorage.getItem('gh_owner') || '';
-        document.getElementById('ghRepo').value = localStorage.getItem('gh_repo') || '';
         document.getElementById('ghToken').value = localStorage.getItem('gh_token') || '';
+        const repoInfo = getAutoRepoInfo();
+        const statusDiv = document.getElementById('repoDetectStatus');
+        if (repoInfo.owner && repoInfo.repo) {
+            statusDiv.innerText = `📍 감지된 저장소: ${repoInfo.owner}/${repoInfo.repo}`;
+        }
     }
 
     async function fetchFromGitHub() {
-        const owner = localStorage.getItem('gh_owner');
-        const repo = localStorage.getItem('gh_repo');
+        const repoInfo = getAutoRepoInfo();
         const token = localStorage.getItem('gh_token');
-        if (!owner || !repo || !token) return;
+        if (!repoInfo.owner || !repoInfo.repo || !token) return;
 
-        const url = `https://api.github.com/repos/${owner}/${repo}/contents/data/attendance.json`;
+        const url = `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/data/attendance.json`;
         try {
             const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github.v3+json' }
@@ -390,12 +399,11 @@
     }
 
     async function saveToGitHub() {
-        const owner = localStorage.getItem('gh_owner');
-        const repo = localStorage.getItem('gh_repo');
+        const repoInfo = getAutoRepoInfo();
         const token = localStorage.getItem('gh_token');
 
-        if (!owner || !repo || !token) {
-            alert('GitHub 설정을 먼저 완료해주세요.');
+        if (!repoInfo.owner || !repoInfo.repo || !token) {
+            alert('GitHub 인증 토큰을 먼저 설정해주세요.');
             toggleConfig();
             return;
         }
@@ -403,7 +411,7 @@
         const dateKey = dateInput.value;
         fullAttendanceData[dateKey] = currentAttendance;
 
-        const url = `https://api.github.com/repos/${owner}/${repo}/contents/data/attendance.json`;
+        const url = `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/data/attendance.json`;
         const bodyData = {
             message: `Save attendance for ${dateKey}`,
             content: utf8ToBase64(JSON.stringify(fullAttendanceData, null, 2))
@@ -419,9 +427,9 @@
             if (res.ok) {
                 const resData = await res.json();
                 currentFileSha = resData.content.sha;
-                alert(`✅ ${dateKey} 출결 기록 및 점수 정보가 저장되었습니다.`);
+                alert(`✅ ${dateKey} 출결 및 점수 정보가 ${repoInfo.repo} 저장소에 연동 저장되었습니다.`);
             } else {
-                alert('저장 실패: GitHub 권한을 확인하세요.');
+                alert('저장 실패: GitHub 토큰 권한을 확인하세요.');
             }
         } catch (e) { alert('오류: ' + e.message); }
     }
@@ -478,9 +486,8 @@
         const tbody = document.getElementById('studentTableBody');
         tbody.innerHTML = '';
 
-        // 기록 권한과 차감 권한을 완전히 독립적 분리
-        const canCheck = (currentRole === 'check'); // 5487328 키만 출결/비고 변경 가능
-        const canAdmin = (currentRole === 'admin'); // 115962 키만 점수 차감 가능
+        const canCheck = (currentRole === 'check');
+        const canAdmin = (currentRole === 'admin');
 
         students.forEach((name, idx) => {
             const no = idx + 1;
@@ -552,7 +559,6 @@
         document.getElementById('statSick').innerText = sick;
     }
 
-    // 스프레드시트 형태로 기록 조회 화면 생성
     function renderHistoryView() {
         const container = document.getElementById('historyContainer');
         container.innerHTML = '';
