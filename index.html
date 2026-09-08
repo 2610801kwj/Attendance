@@ -82,7 +82,6 @@
         }
         .role-none { background: #f3f4f6; color: #57606a; }
         .role-check { background: #ddf4ff; color: #0969da; }
-        .role-admin { background: #ffebe9; color: #cf222e; }
 
         .tab-menu {
             display: flex;
@@ -125,7 +124,7 @@
 
         .stats-bar {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
             gap: 10px;
             margin-bottom: 20px;
         }
@@ -144,21 +143,6 @@
         th, td { padding: 10px 12px; text-align: center; border-bottom: 1px solid var(--border-color); }
         th { background-color: #f6f8fa; font-weight: 600; }
 
-        tr.excluded-row {
-            background-color: #fff8f8;
-            color: #8c959f;
-        }
-
-        .badge-excluded {
-            background: #ffebe9;
-            color: #cf222e;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: bold;
-            margin-left: 4px;
-        }
-
         select {
             padding: 5px 8px;
             border-radius: 6px;
@@ -168,6 +152,8 @@
 
         .status-O { color: #1a7f37; font-weight: bold; }
         .status-L { color: #d97706; font-weight: bold; }
+        .status-I { color: #0969da; font-weight: bold; }
+        .status-S { color: #8250df; font-weight: bold; }
 
         .view-section { display: none; }
         .view-section.active { display: block; }
@@ -217,7 +203,7 @@
         </div>
     </div>
 
-    <!-- 탭 1: 출결 체크 메인 화면 -->
+    <!-- 탭 1: 출결 작성 -->
     <div id="tabCheck" class="view-section active">
         <div style="margin-bottom: 12px;">
             <label><strong>날짜 선택: </strong></label>
@@ -226,34 +212,31 @@
 
         <div class="stats-bar">
             <div class="stat-card">전체 학생<div class="number" id="statTotal">23</div></div>
-            <div class="stat-card">유효 인원<div class="number" id="statActive">23</div></div>
             <div class="stat-card">출석<div class="number status-O" id="statPresent">0</div></div>
             <div class="stat-card">지각<div class="number status-L" id="statLate">0</div></div>
-            <div class="stat-card" style="border-color: #f87171;">집계제외(-1점)<div class="number status-X" id="statExcluded">0</div></div>
+            <div class="stat-card">인정<div class="number status-I" id="statRecognized">0</div></div>
+            <div class="stat-card">질병<div class="number status-S" id="statSick">0</div></div>
         </div>
 
         <table>
             <thead>
                 <tr>
-                    <th style="width: 8%;">번호</th>
-                    <th style="width: 20%;">이름</th>
-                    <th style="width: 20%;">출석 상태</th>
-                    <th style="width: 22%;">집계 제외 (-1점)</th>
-                    <th style="width: 30%;">비고 / 사유</th>
+                    <th style="width: 10%;">번호</th>
+                    <th style="width: 25%;">이름</th>
+                    <th style="width: 30%;">출석 상태</th>
+                    <th style="width: 35%;">비고 / 사유</th>
                 </tr>
             </thead>
             <tbody id="studentTableBody">
-                <!-- 학생 명단 생성 -->
             </tbody>
         </table>
     </div>
 
-    <!-- 탭 2: 저장된 기록 목록 조회 화면 -->
+    <!-- 탭 2: 기록 조회 -->
     <div id="tabHistory" class="view-section">
         <h3>📂 누적 출결 기록 목록</h3>
         <p style="font-size: 0.9rem; color: #57606a;">사이트에 저장된 날짜별 출결 데이터 현황입니다.</p>
         <div id="historyContainer">
-            <!-- 저장된 기록 데이터 로드 -->
         </div>
     </div>
 </div>
@@ -267,11 +250,9 @@
         "최윤후", "최임성", "최지원"
     ];
 
-    // 내부 키 설정 (사이트 UI 및 프롬프트 문구에 노출되지 않음)
-    const KEY_CHECK = "1234"; // 출결 입력 키
-    const KEY_ADMIN = "9999"; // 집계 제외 및 감점 처리 키
+    const KEY_CHECK = "1234";
 
-    let currentRole = 'none'; // 'none', 'check', 'admin'
+    let currentRole = 'none';
     let currentAttendance = {};
     let fullAttendanceData = {};
     let currentFileSha = null;
@@ -284,7 +265,6 @@
         fetchFromGitHub();
     };
 
-    // 오늘 날짜로 자동 연동
     function initDate() {
         const today = new Date().toISOString().split('T')[0];
         dateInput.value = today;
@@ -294,7 +274,6 @@
         });
     }
 
-    // 보안키 인증 (보안키 값을 프롬프트에 노출하지 않음)
     function authenticate() {
         if (currentRole !== 'none') {
             currentRole = 'none';
@@ -310,9 +289,6 @@
         if (inputKey === KEY_CHECK) {
             currentRole = 'check';
             alert('출결 작성 권한으로 인증되었습니다.');
-        } else if (inputKey === KEY_ADMIN) {
-            currentRole = 'admin';
-            alert('관리자 권한(집계 제외 및 감점 조작 포함)으로 인증되었습니다.');
         } else {
             alert('올바르지 않은 보안키입니다.');
         }
@@ -326,16 +302,12 @@
         if (currentRole === 'check') {
             badge.innerText = "🔑 권한: 출결 작성 모드";
             badge.className = "role-badge role-check";
-        } else if (currentRole === 'admin') {
-            badge.innerText = "⚡ 권한: 관리자 모드 (집계제외/감점 가능)";
-            badge.className = "role-badge role-admin";
         } else {
             badge.innerText = "🔒 권한: 읽기 전용";
             badge.className = "role-badge role-none";
         }
     }
 
-    // 탭 전환 함수
     function switchTab(tabName) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
@@ -350,7 +322,6 @@
         }
     }
 
-    // GitHub 설정
     function toggleConfig() {
         const panel = document.getElementById('configPanel');
         panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
@@ -370,7 +341,6 @@
         document.getElementById('ghToken').value = localStorage.getItem('gh_token') || '';
     }
 
-    // GitHub 불러오기
     async function fetchFromGitHub() {
         const owner = localStorage.getItem('gh_owner');
         const repo = localStorage.getItem('gh_repo');
@@ -391,7 +361,6 @@
         } catch (e) { console.error(e); }
     }
 
-    // GitHub 저장하기
     async function saveToGitHub() {
         const owner = localStorage.getItem('gh_owner');
         const repo = localStorage.getItem('gh_repo');
@@ -429,7 +398,6 @@
         } catch (e) { alert('오류: ' + e.message); }
     }
 
-    // 메인 출결 테이블 렌더링
     function renderTableForCurrentDate() {
         const dateKey = dateInput.value;
         currentAttendance = fullAttendanceData[dateKey] || {};
@@ -437,36 +405,25 @@
         const tbody = document.getElementById('studentTableBody');
         tbody.innerHTML = '';
 
-        const canCheck = (currentRole === 'check' || currentRole === 'admin');
-        const canAdmin = (currentRole === 'admin');
+        const canCheck = (currentRole === 'check');
 
         students.forEach((name, idx) => {
             const no = idx + 1;
-            const record = currentAttendance[no] || { status: 'O', excluded: false, note: '' };
+            const record = currentAttendance[no] || { status: 'O', note: '' };
             currentAttendance[no] = record;
 
             const tr = document.createElement('tr');
-            if (record.excluded) tr.className = 'excluded-row';
 
             tr.innerHTML = `
                 <td>${no}</td>
-                <td>
-                    <strong>${name}</strong>
-                    ${record.excluded ? '<span class="badge-excluded">집계제외(-1점)</span>' : ''}
-                </td>
+                <td><strong>${name}</strong></td>
                 <td>
                     <select ${!canCheck ? 'disabled' : ''} onchange="updateRecord(${no}, 'status', this.value)">
                         <option value="O" ${record.status === 'O' ? 'selected' : ''}>출석</option>
                         <option value="지각" ${record.status === '지각' ? 'selected' : ''}>지각</option>
+                        <option value="인정" ${record.status === '인정' ? 'selected' : ''}>인정</option>
+                        <option value="질병" ${record.status === '질병' ? 'selected' : ''}>질병</option>
                     </select>
-                </td>
-                <td>
-                    <label style="cursor: pointer; font-size: 0.85rem;">
-                        <input type="checkbox" ${record.excluded ? 'checked' : ''} 
-                            ${!canAdmin ? 'disabled' : ''} 
-                            onchange="updateRecord(${no}, 'excluded', this.checked)">
-                        집계 제외 (-1점)
-                    </label>
                 </td>
                 <td>
                     <input type="text" value="${record.note || ''}" placeholder="사유 입력" style="width: 90%;"
@@ -482,7 +439,7 @@
 
     function updateRecord(no, field, val) {
         if (!currentAttendance[no]) {
-            currentAttendance[no] = { status: 'O', excluded: false, note: '' };
+            currentAttendance[no] = { status: 'O', note: '' };
         }
         currentAttendance[no][field] = val;
         renderTableForCurrentDate();
@@ -490,30 +447,25 @@
 
     function updateStats() {
         let total = students.length;
-        let excludedCount = 0;
-        let present = 0;
-        let late = 0;
+        let present = 0, late = 0, recognized = 0, sick = 0;
 
         students.forEach((_, idx) => {
             const no = idx + 1;
-            const rec = currentAttendance[no] || { status: 'O', excluded: false };
+            const rec = currentAttendance[no] || { status: 'O' };
 
-            if (rec.excluded) {
-                excludedCount++;
-            } else {
-                if (rec.status === 'O') present++;
-                else if (rec.status === '지각') late++;
-            }
+            if (rec.status === 'O') present++;
+            else if (rec.status === '지각') late++;
+            else if (rec.status === '인정') recognized++;
+            else if (rec.status === '질병') sick++;
         });
 
         document.getElementById('statTotal').innerText = total;
-        document.getElementById('statActive').innerText = total - excludedCount;
         document.getElementById('statPresent').innerText = present;
         document.getElementById('statLate').innerText = late;
-        document.getElementById('statExcluded').innerText = excludedCount;
+        document.getElementById('statRecognized').innerText = recognized;
+        document.getElementById('statSick').innerText = sick;
     }
 
-    // 저장된 기록 전체 보기 화면 생성
     function renderHistoryView() {
         const container = document.getElementById('historyContainer');
         container.innerHTML = '';
@@ -526,12 +478,13 @@
 
         dates.forEach(dateStr => {
             const dayData = fullAttendanceData[dateStr];
-            let present = 0, late = 0, excluded = 0;
+            let present = 0, late = 0, recognized = 0, sick = 0;
 
             Object.values(dayData).forEach(r => {
-                if (r.excluded) excluded++;
-                else if (r.status === 'O') present++;
+                if (r.status === 'O') present++;
                 else if (r.status === '지각') late++;
+                else if (r.status === '인정') recognized++;
+                else if (r.status === '질병') sick++;
             });
 
             const card = document.createElement('div');
@@ -544,7 +497,8 @@
                 <div style="margin-top: 8px; font-size: 0.85rem; color: #57606a;">
                     출석: <span class="status-O">${present}명</span> | 
                     지각: <span class="status-L">${late}명</span> | 
-                    집계제외(-1점): <strong style="color:#cf222e;">${excluded}명</strong>
+                    인정: <span class="status-I">${recognized}명</span> | 
+                    질병: <span class="status-S">${sick}명</span>
                 </div>
             `;
             container.appendChild(card);
