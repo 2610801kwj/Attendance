@@ -22,7 +22,7 @@
         }
 
         .container {
-            max-width: 960px;
+            max-width: 1040px;
             margin: 0 auto;
             background: var(--card-bg);
             padding: 24px;
@@ -71,7 +71,10 @@
         }
 
         button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
         button.btn-secondary { background-color: #f6f8fa; color: #24292f; border: 1px solid var(--border-color); }
+        button.btn-danger { background-color: #cf222e; color: white; }
+        button.btn-sm { padding: 3px 8px; font-size: 0.8rem; }
 
         .role-badge {
             font-size: 0.85rem;
@@ -82,6 +85,7 @@
         }
         .role-none { background: #f3f4f6; color: #57606a; }
         .role-check { background: #ddf4ff; color: #0969da; }
+        .role-admin { background: #ffebe9; color: #cf222e; }
 
         .tab-menu {
             display: flex;
@@ -155,6 +159,16 @@
         .status-I { color: #0969da; font-weight: bold; }
         .status-S { color: #8250df; font-weight: bold; }
 
+        .score-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #fff8c5;
+            color: #9a6700;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+
         .view-section { display: none; }
         .view-section.active { display: block; }
         
@@ -210,7 +224,7 @@
         <div class="stats-bar">
             <div class="stat-card">전체 학생<div class="number" id="statTotal">23</div></div>
             <div class="stat-card">출석<div class="number status-O" id="statPresent">0</div></div>
-            <div class="stat-card">지각<div class="number status-L" id="statLate">0</div></div>
+            <div class="stat-card">오늘 지각<div class="number status-L" id="statLate">0</div></div>
             <div class="stat-card">인정<div class="number status-I" id="statRecognized">0</div></div>
             <div class="stat-card">질병<div class="number status-S" id="statSick">0</div></div>
         </div>
@@ -218,10 +232,12 @@
         <table>
             <thead>
                 <tr>
-                    <th style="width: 10%;">번호</th>
-                    <th style="width: 25%;">이름</th>
-                    <th style="width: 30%;">출석 상태</th>
-                    <th style="width: 35%;">비고 / 사유</th>
+                    <th style="width: 8%;">번호</th>
+                    <th style="width: 18%;">이름</th>
+                    <th style="width: 20%;">오늘 상태</th>
+                    <th style="width: 22%;">누적 지각 점수</th>
+                    <th style="width: 17%;">점수 차감 권한</th>
+                    <th style="width: 15%;">비고 / 사유</th>
                 </tr>
             </thead>
             <tbody id="studentTableBody">
@@ -246,9 +262,11 @@
         "최윤후", "최임성", "최지원"
     ];
 
-    const KEY_CHECK = "1234";
+    // 비밀번호 설정
+    const KEY_CHECK = "5487328"; // 출결 작성 전용 키
+    const KEY_ADMIN = "115962";  // 관리자 키 (출결 작성 + 지각 점수 차감 가능)
 
-    let currentRole = 'none';
+    let currentRole = 'none'; // 'none', 'check', 'admin'
     let currentAttendance = {};
     let fullAttendanceData = {};
     let currentFileSha = null;
@@ -285,6 +303,9 @@
         if (inputKey === KEY_CHECK) {
             currentRole = 'check';
             alert('출결 작성 권한으로 인증되었습니다.');
+        } else if (inputKey === KEY_ADMIN) {
+            currentRole = 'admin';
+            alert('관리자 권한(출결 작성 + 지각 점수 차감 가능)으로 인증되었습니다.');
         } else {
             alert('올바르지 않은 보안키입니다.');
         }
@@ -298,6 +319,9 @@
         if (currentRole === 'check') {
             badge.innerText = "🔑 권한: 출결 작성 모드";
             badge.className = "role-badge role-check";
+        } else if (currentRole === 'admin') {
+            badge.innerText = "⚡ 권한: 관리자 모드 (점수 차감 가능)";
+            badge.className = "role-badge role-admin";
         } else {
             badge.innerText = "🔒 권한: 읽기 전용";
             badge.className = "role-badge role-none";
@@ -387,11 +411,52 @@
             if (res.ok) {
                 const resData = await res.json();
                 currentFileSha = resData.content.sha;
-                alert(`✅ ${dateKey} 출결 기록이 저장되었습니다.`);
+                alert(`✅ ${dateKey} 출결 기록 및 점수 정보가 저장되었습니다.`);
             } else {
                 alert('저장 실패: GitHub 권한을 확인하세요.');
             }
         } catch (e) { alert('오류: ' + e.message); }
+    }
+
+    function getStudentLateScore(studentNo) {
+        let rawLateCount = 0;
+        
+        Object.keys(fullAttendanceData).forEach(date => {
+            if (date === '_adjustments') return;
+            const dayData = fullAttendanceData[date];
+            if (dayData && dayData[studentNo] && dayData[studentNo].status === '지각') {
+                rawLateCount++;
+            }
+        });
+
+        if (!fullAttendanceData['_adjustments']) {
+            fullAttendanceData['_adjustments'] = {};
+        }
+
+        const deducted = fullAttendanceData['_adjustments'][studentNo] || 0;
+        const finalScore = Math.max(0, rawLateCount - deducted);
+
+        return { rawLateCount, deducted, finalScore };
+    }
+
+    function deductScore(studentNo) {
+        if (!fullAttendanceData['_adjustments']) fullAttendanceData['_adjustments'] = {};
+        
+        const currentDeducted = fullAttendanceData['_adjustments'][studentNo] || 0;
+        fullAttendanceData['_adjustments'][studentNo] = currentDeducted + 1;
+        
+        renderTableForCurrentDate();
+    }
+
+    function restoreScore(studentNo) {
+        if (!fullAttendanceData['_adjustments']) fullAttendanceData['_adjustments'] = {};
+        
+        const currentDeducted = fullAttendanceData['_adjustments'][studentNo] || 0;
+        if (currentDeducted > 0) {
+            fullAttendanceData['_adjustments'][studentNo] = currentDeducted - 1;
+        }
+        
+        renderTableForCurrentDate();
     }
 
     function renderTableForCurrentDate() {
@@ -405,7 +470,8 @@
         const tbody = document.getElementById('studentTableBody');
         tbody.innerHTML = '';
 
-        const canCheck = (currentRole === 'check');
+        const canCheck = (currentRole === 'check' || currentRole === 'admin');
+        const canAdmin = (currentRole === 'admin');
 
         students.forEach((name, idx) => {
             const no = idx + 1;
@@ -413,6 +479,7 @@
                 currentAttendance[no] = { status: 'O', note: '' };
             }
             const record = currentAttendance[no];
+            const lateStats = getStudentLateScore(no);
 
             const tr = document.createElement('tr');
 
@@ -426,6 +493,14 @@
                         <option value="인정" ${record.status === '인정' ? 'selected' : ''}>인정</option>
                         <option value="질병" ${record.status === '질병' ? 'selected' : ''}>질병</option>
                     </select>
+                </td>
+                <td>
+                    <span class="score-tag">총 ${lateStats.finalScore}점 (지각 ${lateStats.rawLateCount}회)</span>
+                    ${lateStats.deducted > 0 ? `<br><small style="color:#0969da;">(-${lateStats.deducted}점 차감됨)</small>` : ''}
+                </td>
+                <td>
+                    <button class="btn-danger btn-sm" ${!canAdmin ? 'disabled' : ''} onclick="deductScore(${no})">-1점 차감</button>
+                    <button class="btn-secondary btn-sm" ${!canAdmin || lateStats.deducted <= 0 ? 'disabled' : ''} onclick="restoreScore(${no})">복구</button>
                 </td>
                 <td>
                     <input type="text" value="${record.note || ''}" placeholder="사유 입력" style="width: 90%;"
@@ -444,7 +519,7 @@
             currentAttendance[no] = { status: 'O', note: '' };
         }
         currentAttendance[no][field] = val;
-        updateStats();
+        renderTableForCurrentDate();
     }
 
     function updateStats() {
@@ -472,7 +547,7 @@
         const container = document.getElementById('historyContainer');
         container.innerHTML = '';
 
-        const dates = Object.keys(fullAttendanceData).sort().reverse();
+        const dates = Object.keys(fullAttendanceData).filter(d => d !== '_adjustments').sort().reverse();
         if (dates.length === 0) {
             container.innerHTML = '<p style="color: #8c959f;">저장된 기록이 없습니다.</p>';
             return;
